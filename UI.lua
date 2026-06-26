@@ -417,21 +417,27 @@ function AweHub:MakeNotify(NotifyConfig)
         TextLabel2.TextYAlignment = Enum.TextYAlignment.Top
         TextLabel2.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
         TextLabel2.BackgroundTransparency = 0.9990000128746033
-        TextLabel2.TextColor3 = Color3.fromRGB(150.0000062584877, 150.0000062584877, 150.0000062584877)
+        TextLabel2.TextColor3 = Color3.fromRGB(150, 150, 150)
         TextLabel2.BorderColor3 = Color3.fromRGB(0, 0, 0)
         TextLabel2.BorderSizePixel = 0
-        TextLabel2.Position = UDim2.new(0, 10, 0, 27)
+        TextLabel2.Position = UDim2.new(0, 10, 0, 32)
         TextLabel2.Parent = NotifyFrameReal
-        TextLabel2.Size = UDim2.new(1, -20, 0, 13)
-
-        TextLabel2.Size = UDim2.new(1, -20, 0, 13 + (13 * (TextLabel2.TextBounds.X // TextLabel2.AbsoluteSize.X)))
         TextLabel2.TextWrapped = true
+        TextLabel2.Size = UDim2.new(1, -20, 0, 0)
+        TextLabel2.AutomaticSize = Enum.AutomaticSize.Y
 
-        if TextLabel2.AbsoluteSize.Y < 27 then
-            NotifyFrame.Size = UDim2.new(1, 0, 0, 65)
-        else
-            NotifyFrame.Size = UDim2.new(1, 0, 0, TextLabel2.AbsoluteSize.Y + 40)
+        -- Wait for TextBounds to calculate
+        task.wait()
+
+        local contentHeight = TextLabel2.TextBounds.Y
+        local totalHeight = 32 + contentHeight + 12
+
+        -- Minimum height
+        if totalHeight < 55 then
+            totalHeight = 55
         end
+
+        NotifyFrame.Size = UDim2.new(1, 0, 0, totalHeight)
         local waitbruh = false
         function NotifyFunction:Close()
             if waitbruh then
