@@ -478,7 +478,7 @@ function AweHub:Window(GuiConfig)
     GuiConfig.Color        = GuiConfig.Color or Color3.fromRGB(255, 0, 255)
     GuiConfig["Tab Width"] = GuiConfig["Tab Width"] or 120
     GuiConfig.Version      = GuiConfig.Version or 1
-    GuiConfig.Image        = GuiConfig.Image or 109988698308553
+    GuiConfig.Image        = GuiConfig.Image or 136987466315529
     AweHubColor            = GuiConfig.Color
 
     CURRENT_VERSION        = GuiConfig.Version
