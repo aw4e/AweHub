@@ -759,6 +759,8 @@ function AweHub:Window(GuiConfig)
     Min.Activated:Connect(function()
         CircleClick(Min, Mouse.X, Mouse.Y)
         DropShadowHolder.Visible = false
+        local tb = game:GetService("CoreGui"):FindFirstChild("ToggleUIButton")
+        if tb then tb.Enabled = true end
     end)
     Close.Activated:Connect(function()
         CircleClick(Close, Mouse.X, Mouse.Y)
@@ -881,9 +883,11 @@ function AweHub:Window(GuiConfig)
 
     function GuiFunc:ToggleUI()
         local ScreenGui = Instance.new("ScreenGui")
-        ScreenGui.Parent = game:GetService("CoreGui")
         ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        ScreenGui.DisplayOrder = 999
+        ScreenGui.Enabled = false
         ScreenGui.Name = "ToggleUIButton"
+        ScreenGui.Parent = game:GetService("CoreGui")
 
         local MainButton = Instance.new("ImageLabel")
         MainButton.Parent = ScreenGui
@@ -907,6 +911,7 @@ function AweHub:Window(GuiConfig)
         Button.MouseButton1Click:Connect(function()
             if DropShadowHolder then
                 DropShadowHolder.Visible = not DropShadowHolder.Visible
+                ScreenGui.Enabled = not DropShadowHolder.Visible
             end
         end)
 
