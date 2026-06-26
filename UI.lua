@@ -17,6 +17,7 @@ ConfigData       = {}
 Elements         = {}
 Flags            = {}
 CURRENT_VERSION  = nil
+AweHubColor      = Color3.fromRGB(255, 0, 255)
 
 function SaveConfig()
     if writefile then
@@ -267,7 +268,7 @@ function AweHub:MakeNotify(NotifyConfig)
     NotifyConfig.Title = NotifyConfig.Title or "Awe Hub"
     NotifyConfig.Description = NotifyConfig.Description or "Notification"
     NotifyConfig.Content = NotifyConfig.Content or "Content"
-    NotifyConfig.Color = NotifyConfig.Color or Color3.fromRGB(255, 0, 255)
+    NotifyConfig.Color = NotifyConfig.Color or AweHubColor or Color3.fromRGB(255, 0, 255)
     NotifyConfig.Time = NotifyConfig.Time or 0.5
     NotifyConfig.Delay = NotifyConfig.Delay or 5
     local NotifyFunction = {}
@@ -478,6 +479,7 @@ function AweHub:Window(GuiConfig)
     GuiConfig["Tab Width"] = GuiConfig["Tab Width"] or 120
     GuiConfig.Version      = GuiConfig.Version or 1
     GuiConfig.Image        = GuiConfig.Image or 109988698308553
+    AweHubColor            = GuiConfig.Color
 
     CURRENT_VERSION        = GuiConfig.Version
     LoadConfigFromFile()
@@ -887,7 +889,8 @@ function AweHub:Window(GuiConfig)
         MainButton.Parent = ScreenGui
         MainButton.Size = UDim2.new(0, 40, 0, 40)
         MainButton.Position = UDim2.new(0, 20, 0, 100)
-        MainButton.BackgroundTransparency = 1
+        MainButton.BackgroundColor3 = GuiConfig.Color
+        MainButton.BackgroundTransparency = 0.4
         MainButton.Image = "rbxassetid://" .. GuiConfig.Image
         MainButton.ScaleType = Enum.ScaleType.Fit
 
