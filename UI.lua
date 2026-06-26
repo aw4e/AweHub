@@ -889,26 +889,20 @@ function AweHub:Window(GuiConfig)
         ScreenGui.Name = "ToggleUIButton"
         ScreenGui.Parent = game:GetService("CoreGui")
 
-        local MainButton = Instance.new("ImageLabel")
+        local MainButton = Instance.new("ImageButton")
         MainButton.Parent = ScreenGui
         MainButton.Size = UDim2.new(0, 40, 0, 40)
         MainButton.Position = UDim2.new(0, 20, 0, 100)
         MainButton.BackgroundColor3 = GuiConfig.Color
         MainButton.BackgroundTransparency = 0.4
-        MainButton.Image = "rbxassetid://" .. GuiConfig.Image
+        MainButton.Image = "rbxassetid://136987466315529"
         MainButton.ScaleType = Enum.ScaleType.Fit
 
         local UICorner = Instance.new("UICorner")
         UICorner.CornerRadius = UDim.new(0, 6)
         UICorner.Parent = MainButton
 
-        local Button = Instance.new("TextButton")
-        Button.Parent = MainButton
-        Button.Size = UDim2.new(1, 0, 1, 0)
-        Button.BackgroundTransparency = 1
-        Button.Text = ""
-
-        Button.MouseButton1Click:Connect(function()
+        MainButton.MouseButton1Click:Connect(function()
             if DropShadowHolder then
                 DropShadowHolder.Visible = not DropShadowHolder.Visible
                 ScreenGui.Enabled = not DropShadowHolder.Visible
@@ -928,7 +922,7 @@ function AweHub:Window(GuiConfig)
             )
         end
 
-        Button.InputBegan:Connect(function(input)
+        MainButton.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                 dragging = true
                 dragStart = input.Position
