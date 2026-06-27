@@ -172,6 +172,11 @@ local espCfg         = {
     weightKg   = math.huge,
     onlyOwned  = false,
 }
+local harvestCfg     = {
+    weightMode = "Below",
+    weightKg   = math.huge,
+    onlyTypes  = {},
+}
 
 local hudConn  = nil
 local totalLbl = nil
@@ -378,15 +383,68 @@ local function findMyPlots()
     return out
 end
 
+local PASS_ALL = {
+    weightKg      = math.huge,
+    moneyThreshStr = "",
+    onlyRarities  = {},
+    onlyMuts      = {},
+    onlyTypes     = {},
+}
+
+local function passFilter(f, cfg)
+    -- Weight check
+    local wkg = cfg.weightKg or math.huge
+    if wkg < math.huge then
+        local ok
+        if cfg.weightMode == "Above" then
+            ok = f.weight >= wkg
+        else
+            ok = f.weight <= wkg
+        end
+        if not ok then return false end
+    end
+
+    -- Money threshold check
+    local mts = cfg.moneyThreshStr
+    if mts and mts ~= "" then
+        local n = tonumber(mts)
+        if not n or n == 0 then return false end
+        local dot  = mts:find("%.")
+        local step = dot and 10 ^ -(#mts - dot) or 1
+        local lo, hi = n * 1e6, (n + step) * 1e6
+        if f.price < lo or f.price >= hi then return false end
+    end
+
+    -- Rarity check
+    if cfg.onlyRarities and next(cfg.onlyRarities) ~= nil then
+        if not cfg.onlyRarities[f.rarity or "Common"] then
+            return false
+        end
+    end
+
+    -- Mutation check
+    if cfg.onlyMuts and next(cfg.onlyMuts) ~= nil then
+        local mutKey = (not f.mutation or f.mutation == "")
+            and "None"
+            or  f.mutation
+        if not cfg.onlyMuts[mutKey] then return false end
+    end
+
+    -- Fruit type check
+    if next(cfg.onlyTypes) ~= nil then
+        if not cfg.onlyTypes[f.name] then return false end
+    end
+
+    return true
+end
+
 local function fruitPassHarvest(fruit)
     local name = fruit:GetAttribute("CorePartName") or fruit.Name
     local sm   = fruit:GetAttribute("SizeMulti") or fruit:GetAttribute("SizeMultiplier") or 1
     return passFilter({
-        name     = name,
-        weight   = fruit:GetAttribute("Weight") or getWeight(name, sm),
-        price    = 0,
-        rarity   = FRUIT_RARITY[name] or "Common",
-        mutation = fruit:GetAttribute("Mutation") or "",
+        name   = name,
+        weight = fruit:GetAttribute("Weight") or getWeight(name, sm),
+        price  = 0,
     }, harvestCfg)
 end
 
@@ -447,62 +505,6 @@ local function stopDisableHarvest()
     for _, c in ipairs(proximityConns) do pcall(function() c:Disconnect() end) end
     proximityConns = {}
     setPlotHarvestEnabled(true)
-end
-
-
-local PASS_ALL = {
-    weightKg      = math.huge,
-    moneyThreshStr = "",
-    onlyRarities  = {},
-    onlyMuts      = {},
-    onlyTypes     = {},
-}
-
-local function passFilter(f, cfg)
-    -- Weight check
-    local wkg = cfg.weightKg or math.huge
-    if wkg < math.huge then
-        local ok
-        if cfg.weightMode == "Above" then
-            ok = f.weight >= wkg
-        else
-            ok = f.weight <= wkg
-        end
-        if not ok then return false end
-    end
-
-    -- Money threshold check
-    local mts = cfg.moneyThreshStr
-    if mts and mts ~= "" then
-        local n = tonumber(mts)
-        if not n or n == 0 then return false end
-        local dot  = mts:find("%.")
-        local step = dot and 10 ^ -(#mts - dot) or 1
-        local lo, hi = n * 1e6, (n + step) * 1e6
-        if f.price < lo or f.price >= hi then return false end
-    end
-
-    -- Rarity check
-    if next(cfg.onlyRarities) ~= nil then
-        if not cfg.onlyRarities[f.rarity or "Common"] then
-            return false
-        end
-    end
-
-    -- Mutation check
-    if next(cfg.onlyMuts) ~= nil then
-        local mutKey = (not f.mutation or f.mutation == "")
-            and "None"
-            or  f.mutation
-        if not cfg.onlyMuts[mutKey] then return false end
-    end
-
-    -- Fruit type check
-    if next(cfg.onlyTypes) ~= nil then
-        if not cfg.onlyTypes[f.name] then return false end
-    end
-
-    return true
 end
 
 
@@ -913,14 +915,6 @@ local function stopFruitESP()
     espTags = {}
 end
 
-
-local harvestCfg = {
-    weightMode   = "Below",
-    weightKg     = math.huge,
-    onlyTypes    = {},
-    onlyRarities = {},
-    onlyMuts     = {},
-}
 
 local collectCfg = {
     onlyMuts     = {},
