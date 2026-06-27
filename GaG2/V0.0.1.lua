@@ -1319,12 +1319,22 @@ local KEEP = {
     FruitSpawnLocations  = true,
 }
 
-local function hideChild(child, plant)
-    child.Parent = lagStore
+local function getOrMakeFolder(parent, name)
+    local f = parent:FindFirstChild(name)
+    if not f then
+        f = Instance.new("Folder")
+        f.Name   = name
+        f.Parent = parent
+    end
+    return f
+end
+
+local function hideChild(child, plant, bucket)
+    child.Parent = bucket
     table.insert(stored, { child = child, plant = plant })
 end
 
-local function cleanPlant(plant)
+local function cleanPlant(plant, bucket)
     local sn   = plant:GetAttribute("SeedName")
     local full = sn and FULL_DESTROY_SEEDS[sn]
 
@@ -1333,7 +1343,7 @@ local function cleanPlant(plant)
         if full then
             pcall(function() child:Destroy() end)
         elseif not KEEP[child.Name] then
-            hideChild(child, plant)
+            hideChild(child, plant, bucket)
         end
     end
 end
@@ -1361,12 +1371,15 @@ local function startLag()
     for _, plot in ipairs(workspace.Gardens:GetChildren()) do
         local plants = plot:FindFirstChild("Plants")
         if plants then
+            local plotBucket = getOrMakeFolder(lagStore, plot.Name)
             for _, plant in ipairs(plants:GetChildren()) do
-                cleanPlant(plant)
+                local bucket = getOrMakeFolder(plotBucket, plant.Name)
+                cleanPlant(plant, bucket)
             end
             table.insert(lagConns, plants.ChildAdded:Connect(function(pp)
                 task.wait(0.1)
-                cleanPlant(pp)
+                local bucket = getOrMakeFolder(getOrMakeFolder(lagStore, plot.Name), pp.Name)
+                cleanPlant(pp, bucket)
             end))
         end
     end
