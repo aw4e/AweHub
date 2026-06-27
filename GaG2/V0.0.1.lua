@@ -170,6 +170,7 @@ local espActive      = false
 local espCfg         = {
     weightMode = "Below",
     weightKg   = math.huge,
+    onlyOwned  = false,
 }
 
 local hudConn  = nil
@@ -461,9 +462,12 @@ local function passFilter(f, cfg)
     -- Weight check
     local wkg = cfg.weightKg or math.huge
     if wkg < math.huge then
-        local ok = (cfg.weightMode == "Above")
-            and (f.weight >= wkg)
-            or  (f.weight <= wkg)
+        local ok
+        if cfg.weightMode == "Above" then
+            ok = f.weight >= wkg
+        else
+            ok = f.weight <= wkg
+        end
         if not ok then return false end
     end
 
@@ -781,9 +785,12 @@ local function attachESP(fruitModel)
 
     -- Weight filter
     if espCfg.weightKg < math.huge then
-        local pass = (espCfg.weightMode == "Above")
-            and (weight >= espCfg.weightKg)
-            or  (weight <= espCfg.weightKg)
+        local pass
+        if espCfg.weightMode == "Above" then
+            pass = weight >= espCfg.weightKg
+        else
+            pass = weight <= espCfg.weightKg
+        end
         if not pass then return end
     end
 
@@ -850,11 +857,18 @@ local function attachESP(fruitModel)
     end)
 end
 
+local function isOwnedPlot(plot)
+    local uid   = plot:GetAttribute("OwnerUserId")
+    local owner = plot:GetAttribute("Owner")
+    return uid == p.UserId or owner == p.Name
+end
+
 local function scanGardenForESP()
     local g = workspace:FindFirstChild("Gardens")
     if not g then return end
 
     for _, plot in ipairs(g:GetChildren()) do
+        if espCfg.onlyOwned and not isOwnedPlot(plot) then continue end
         local plants = plot:FindFirstChild("Plants")
         if plants then
             for _, plant in ipairs(plants:GetChildren()) do
@@ -890,12 +904,13 @@ local function stopFruitESP()
     for _, c in ipairs(espConns) do
         pcall(function() c:Disconnect() end)
     end
-    espConns = {}
+    espConns      = {}
+    espRefreshFns = {}
 
-    for model, bb in pairs(espTags) do
+    for _, bb in pairs(espTags) do
         if bb and bb.Parent then bb:Destroy() end
-        espTags[model] = nil
     end
+    espTags = {}
 end
 
 
@@ -1715,6 +1730,15 @@ FruitESPSection:AddToggle({
     end,
 }, "FruitESP")
 
+FruitESPSection:AddToggle({
+    Title    = "Show Only Owned",
+    Default  = false,
+    Callback = function(v)
+        espCfg.onlyOwned = v
+        if espActive then stopFruitESP(); scanGardenForESP() end
+    end,
+}, "ESPOnlyOwned")
+
 FruitESPSection:AddDropdown({
     Title    = "Threshold Mode",
     Options  = {"Below", "Above"},
@@ -1737,8 +1761,43 @@ FruitESPSection:AddInput({
     end,
 }, "ESPWeightKg")
 
-local HarvestSection = Tabs.Main:AddSection("Harvest", true)
-addUnifiedFilters(HarvestSection, harvestCfg, "Harvest")
+local HarvestSection = Tabs.Main:AddSection("Disable Harvest", true)
+
+do
+    local fruitNames = {}
+    for name in pairs(SellValueData) do table.insert(fruitNames, name) end
+    table.sort(fruitNames)
+    if #fruitNames == 0 then fruitNames = {"(no data)"} end
+
+    HarvestSection:AddDropdown({
+        Title    = "Select Fruit",
+        Options  = fruitNames,
+        Multi    = true,
+        Default  = {},
+        Callback = function(opts)
+            for k in pairs(harvestCfg.onlyTypes) do harvestCfg.onlyTypes[k] = nil end
+            for _, n in ipairs(opts) do harvestCfg.onlyTypes[n] = true end
+        end,
+    }, "HarvestFruit")
+
+    HarvestSection:AddDropdown({
+        Title    = "Threshold Mode",
+        Options  = {"Below", "Above"},
+        Default  = "Below",
+        Multi    = false,
+        Callback = function(v) harvestCfg.weightMode = v end,
+    }, "HarvestThreshMode")
+
+    HarvestSection:AddInput({
+        Title    = "Weight Threshold (kg)",
+        Content  = "e.g.: 100  (empty = all)",
+        Default  = "",
+        Callback = function(v)
+            local n = tonumber(v)
+            harvestCfg.weightKg = n and n or math.huge
+        end,
+    }, "HarvestWeightKg")
+end
 HarvestSection:AddToggle({
     Title    = "Disable Harvest Prompt",
     Default  = false,
