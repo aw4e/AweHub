@@ -187,10 +187,12 @@ local autoSellAllRunning   = false
 local collectedSet = {}
 local dropBusy     = false
 
-local lagConns = {}
-local stored   = {}
-local lagStore = Instance.new("Folder")
-lagStore.Name  = "_LagStore"
+local lagConns  = {}
+local stored    = {}
+local proximityConns = {}
+local lagRunning = false
+local lagStore  = Instance.new("Folder")
+lagStore.Name   = "_LagStore"
 lagStore.Parent = p
 
 local FULL_DESTROY_SEEDS = {}
@@ -359,6 +361,91 @@ local function findMyPlot()
             return pl
         end
     end
+end
+
+local function findMyPlots()
+    local g = workspace:FindFirstChild("Gardens")
+    if not g then return {} end
+    local out = {}
+    for _, pl in ipairs(g:GetChildren()) do
+        local uid   = pl:GetAttribute("OwnerUserId")
+        local owner = pl:GetAttribute("Owner")
+        if uid == p.UserId or owner == p.Name then
+            table.insert(out, pl)
+        end
+    end
+    return out
+end
+
+local function fruitPassHarvest(fruit)
+    local name = fruit:GetAttribute("CorePartName") or fruit.Name
+    local sm   = fruit:GetAttribute("SizeMulti") or fruit:GetAttribute("SizeMultiplier") or 1
+    return passFilter({
+        name     = name,
+        weight   = fruit:GetAttribute("Weight") or getWeight(name, sm),
+        price    = 0,
+        rarity   = FRUIT_RARITY[name] or "Common",
+        mutation = fruit:GetAttribute("Mutation") or "",
+    }, harvestCfg)
+end
+
+local function setFruitPrompt(fruit, enabled)
+    for _, d in ipairs(fruit:GetDescendants()) do
+        if d:IsA("ProximityPrompt") and d.Name == "HarvestPrompt" then
+            d.Enabled = enabled
+        end
+    end
+end
+
+local function setPlotHarvestEnabled(enabled)
+    for _, plot in ipairs(findMyPlots()) do
+        local plants = plot:FindFirstChild("Plants")
+        if not plants then continue end
+        for _, plant in ipairs(plants:GetChildren()) do
+            local ff = plant:FindFirstChild("Fruits")
+            if ff then
+                for _, fruit in ipairs(ff:GetChildren()) do
+                    if enabled or fruitPassHarvest(fruit) then
+                        setFruitPrompt(fruit, enabled)
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function watchHarvestPrompt(ff)
+    table.insert(proximityConns, ff.ChildAdded:Connect(function(fruit)
+        task.wait(0.15)
+        if fruitPassHarvest(fruit) then
+            setFruitPrompt(fruit, false)
+        end
+    end))
+end
+
+local function startDisableHarvest()
+    for _, c in ipairs(proximityConns) do pcall(function() c:Disconnect() end) end
+    proximityConns = {}
+    setPlotHarvestEnabled(false)
+    for _, plot in ipairs(findMyPlots()) do
+        local plants = plot:FindFirstChild("Plants")
+        if not plants then continue end
+        for _, plant in ipairs(plants:GetChildren()) do
+            local ff = plant:FindFirstChild("Fruits")
+            if ff then watchHarvestPrompt(ff) end
+        end
+        table.insert(proximityConns, plants.ChildAdded:Connect(function(pp)
+            task.wait(0.2)
+            local ff = pp:FindFirstChild("Fruits")
+            if ff then watchHarvestPrompt(ff) end
+        end))
+    end
+end
+
+local function stopDisableHarvest()
+    for _, c in ipairs(proximityConns) do pcall(function() c:Disconnect() end) end
+    proximityConns = {}
+    setPlotHarvestEnabled(true)
 end
 
 
@@ -811,6 +898,14 @@ local function stopFruitESP()
     end
 end
 
+
+local harvestCfg = {
+    weightMode   = "Below",
+    weightKg     = math.huge,
+    onlyTypes    = {},
+    onlyRarities = {},
+    onlyMuts     = {},
+}
 
 local collectCfg = {
     onlyMuts     = {},
@@ -1314,9 +1409,10 @@ local function stopAutoSellAll()
 end
 
 
+
 local KEEP = {
-    Fruits               = true,
-    FruitSpawnLocations  = true,
+    Fruits              = true,
+    FruitSpawnLocations = true,
 }
 
 local function getOrMakeFolder(parent, name)
@@ -1329,29 +1425,27 @@ local function getOrMakeFolder(parent, name)
     return f
 end
 
-local function hideChild(child, plant, bucket)
+local function hideChild(child, origParent, bucket)
     child.Parent = bucket
-    table.insert(stored, { child = child, plant = plant })
+    table.insert(stored, { child = child, plant = origParent })
 end
 
-local function cleanPlant(plant, bucket)
-    local sn   = plant:GetAttribute("SeedName")
-    local full = sn and FULL_DESTROY_SEEDS[sn]
+local function cleanPlant(plant, plotBucket)
+    local seedName    = plant:GetAttribute("SeedName")
+    local fullHide    = seedName and FULL_DESTROY_SEEDS[seedName]
+    local plantBucket = getOrMakeFolder(plotBucket, plant.Name)
 
     for _, child in ipairs(plant:GetChildren()) do
         if child.Name == "_LagStore" then continue end
-        if full then
-            pcall(function() child:Destroy() end)
-        elseif not KEEP[child.Name] then
-            hideChild(child, plant, bucket)
+        if fullHide or not KEEP[child.Name] then
+            hideChild(child, plant, plantBucket)
         end
     end
 end
 
 local function stopLag()
-    for _, c in ipairs(lagConns) do
-        c:Disconnect()
-    end
+    lagRunning = false
+    for _, c in ipairs(lagConns) do pcall(function() c:Disconnect() end) end
     lagConns = {}
 
     for _, entry in ipairs(stored) do
@@ -1368,18 +1462,17 @@ end
 
 local function startLag()
     stopLag()
+    lagRunning = true
     for _, plot in ipairs(workspace.Gardens:GetChildren()) do
         local plants = plot:FindFirstChild("Plants")
         if plants then
             local plotBucket = getOrMakeFolder(lagStore, plot.Name)
             for _, plant in ipairs(plants:GetChildren()) do
-                local bucket = getOrMakeFolder(plotBucket, plant.Name)
-                cleanPlant(plant, bucket)
+                cleanPlant(plant, plotBucket)
             end
             table.insert(lagConns, plants.ChildAdded:Connect(function(pp)
                 task.wait(0.1)
-                local bucket = getOrMakeFolder(getOrMakeFolder(lagStore, plot.Name), pp.Name)
-                cleanPlant(pp, bucket)
+                cleanPlant(pp, getOrMakeFolder(lagStore, plot.Name))
             end))
         end
     end
@@ -1469,6 +1562,7 @@ local function doCleanup()
     stopHUD()
     stopLag()
     stopFruitESP()
+    stopDisableHarvest()
     stopAutoCollect()
     stopAutoCollectAll()
     stopAutoCollectDrop()
@@ -1556,9 +1650,7 @@ local function addUnifiedFilters(section, cfg, pfx)
         Default = {},
         Callback = function(opts)
             for k in pairs(cfg.onlyTypes) do cfg.onlyTypes[k] = nil end
-            for n, s in pairs(opts) do
-                if s then cfg.onlyTypes[n] = true end
-            end
+            for _, n in ipairs(opts) do cfg.onlyTypes[n] = true end
         end,
     }, pfx .. "Fruit")
 
@@ -1569,9 +1661,7 @@ local function addUnifiedFilters(section, cfg, pfx)
         Default = {},
         Callback = function(opts)
             for k in pairs(cfg.onlyRarities) do cfg.onlyRarities[k] = nil end
-            for n, s in pairs(opts) do
-                if s then cfg.onlyRarities[n] = true end
-            end
+            for _, n in ipairs(opts) do cfg.onlyRarities[n] = true end
         end,
     }, pfx .. "Rarity")
 
@@ -1582,9 +1672,7 @@ local function addUnifiedFilters(section, cfg, pfx)
         Default = {},
         Callback = function(opts)
             for k in pairs(cfg.onlyMuts) do cfg.onlyMuts[k] = nil end
-            for n, s in pairs(opts) do
-                if s then cfg.onlyMuts[n] = true end
-            end
+            for _, n in ipairs(opts) do cfg.onlyMuts[n] = true end
         end,
     }, pfx .. "Mutation")
 
@@ -1649,6 +1737,16 @@ FruitESPSection:AddInput({
     end,
 }, "ESPWeightKg")
 
+local HarvestSection = Tabs.Main:AddSection("Harvest", true)
+addUnifiedFilters(HarvestSection, harvestCfg, "Harvest")
+HarvestSection:AddToggle({
+    Title    = "Disable Harvest Prompt",
+    Default  = false,
+    Callback = function(v)
+        if v then startDisableHarvest() else stopDisableHarvest() end
+    end,
+}, "DisableHarvestPrompt")
+
 -- Anti-Lag
 local LagSection = Tabs.Main:AddSection("Anti-Lag", true)
 local seedNames  = getSeedNames()
@@ -1660,10 +1758,10 @@ local LagDropdown = LagSection:AddDropdown({
     Default  = {},
     Callback = function(opts)
         for k in pairs(FULL_DESTROY_SEEDS) do FULL_DESTROY_SEEDS[k] = nil end
-        for name, selected in pairs(opts) do
-            if selected then FULL_DESTROY_SEEDS[name] = true end
+        for _, name in ipairs(opts) do
+            FULL_DESTROY_SEEDS[name] = true
         end
-        if #lagConns > 0 then startLag() end
+        if lagRunning then startLag() end
     end,
 }, "FullDestroySeeds")
 
