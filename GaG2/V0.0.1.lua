@@ -22,9 +22,6 @@ local SellValueData = require(game.ReplicatedStorage.SharedModules.SellValueData
 local MutationData  = require(game.ReplicatedStorage.SharedModules.MutationData)
 local Net           = require(game.ReplicatedStorage.SharedModules.Networking)
 
--- ═══════════════════════════════════════════
---  Constants
--- ═══════════════════════════════════════════
 
 local SEND_DELAY  = 10   -- server enforces 10s between SendBatch calls
 local BATCH_SIZE  = 20
@@ -160,9 +157,6 @@ local MUT_NAMES = {
     "Aurora",
 }
 
--- ═══════════════════════════════════════════
---  State
--- ═══════════════════════════════════════════
 
 local stockMults = {}
 local lastT      = 0
@@ -172,6 +166,11 @@ local allConns       = {}
 local espConns       = {}
 local espTags        = {}
 local espRefreshFns  = {}
+local espActive      = false
+local espCfg         = {
+    weightMode = "Below",
+    weightKg   = math.huge,
+}
 
 local hudConn  = nil
 local totalLbl = nil
@@ -196,9 +195,6 @@ lagStore.Parent = p
 
 local FULL_DESTROY_SEEDS = {}
 
--- ═══════════════════════════════════════════
---  Helpers
--- ═══════════════════════════════════════════
 
 local function track(c)
     if c then table.insert(allConns, c) end
@@ -228,9 +224,6 @@ local function fmt(n)
     end
 end
 
--- ═══════════════════════════════════════════
---  Stock Multiplier
--- ═══════════════════════════════════════════
 
 local function applyStock(snap)
     local e = snap and snap.entries
@@ -263,9 +256,6 @@ pcall(function()
     track(Net.FruitStock.Snapshot.OnClientEvent:Connect(applyStock))
 end)
 
--- ═══════════════════════════════════════════
---  Price Calculation
--- ═══════════════════════════════════════════
 
 local function getMutMult(mutation)
     if mutation == "" then return 1 end
@@ -315,9 +305,6 @@ local function getWeight(fruitName, sizeMulti)
     return math.floor(w * 100 + 0.5) / 100
 end
 
--- ═══════════════════════════════════════════
---  Backpack Scanner
--- ═══════════════════════════════════════════
 
 local function getBackpackFruits()
     local bp = p:FindFirstChild("Backpack")
@@ -356,9 +343,6 @@ local function getBackpackFruits()
     return out
 end
 
--- ═══════════════════════════════════════════
---  Plot Finder
--- ═══════════════════════════════════════════
 
 local function findMyPlot()
     local g = workspace:FindFirstChild("Gardens")
@@ -377,9 +361,6 @@ local function findMyPlot()
     end
 end
 
--- ═══════════════════════════════════════════
---  Filter
--- ═══════════════════════════════════════════
 
 local PASS_ALL = {
     weightKg      = math.huge,
@@ -433,9 +414,6 @@ local function passFilter(f, cfg)
     return true
 end
 
--- ═══════════════════════════════════════════
---  ESP HUD (Inventory Price Overlay)
--- ═══════════════════════════════════════════
 
 local function ensureItemLabel(cell, textSize)
     local lbl = cell:FindFirstChild("_ItemPrice")
@@ -656,9 +634,6 @@ local function stopHUD()
     end)
 end
 
--- ═══════════════════════════════════════════
---  Fruit ESP
--- ═══════════════════════════════════════════
 
 local function makeMutColorHex(mut)
     local c = mut and MUTATION_COLORS[mut]
@@ -716,6 +691,14 @@ local function attachESP(fruitModel)
     local sm     = fruitModel:GetAttribute("SizeMulti") or fruitModel:GetAttribute("SizeMultiplier") or 1
     local mut    = fruitModel:GetAttribute("Mutation") or ""
     local weight = fruitModel:GetAttribute("Weight") or getWeight(name, sm)
+
+    -- Weight filter
+    if espCfg.weightKg < math.huge then
+        local pass = (espCfg.weightMode == "Above")
+            and (weight >= espCfg.weightKg)
+            or  (weight <= espCfg.weightKg)
+        if not pass then return end
+    end
 
     -- Billboard
     local bb = Instance.new("BillboardGui")
@@ -828,9 +811,6 @@ local function stopFruitESP()
     end
 end
 
--- ═══════════════════════════════════════════
---  Auto Collect
--- ═══════════════════════════════════════════
 
 local collectCfg = {
     onlyMuts     = {},
@@ -909,9 +889,6 @@ local function stopAutoCollectAll()
     collectAllRunning = false
 end
 
--- ═══════════════════════════════════════════
---  Auto Collect Drop Items
--- ═══════════════════════════════════════════
 
 local function collectDropItems()
     local char = p.Character
@@ -962,9 +939,6 @@ local function stopAutoCollectDrop()
     autoCollectDropRunning = false
 end
 
--- ═══════════════════════════════════════════
---  Gift / Send
--- ═══════════════════════════════════════════
 
 local giftCfg = {
     target         = "",
@@ -1152,9 +1126,6 @@ local function sendGiftAll()
     doSendItems(items, totalPrice, typeInfo)
 end
 
--- ═══════════════════════════════════════════
---  Drop
--- ═══════════════════════════════════════════
 
 local dropCfg = {
     weightMode   = "Below",
@@ -1286,9 +1257,6 @@ local function stopAutoDropAll()
     autoDropAllRunning = false
 end
 
--- ═══════════════════════════════════════════
---  Sell
--- ═══════════════════════════════════════════
 
 local sellCfg = {
     weightMode   = "Below",
@@ -1345,9 +1313,6 @@ local function stopAutoSellAll()
     autoSellAllRunning = false
 end
 
--- ═══════════════════════════════════════════
---  Anti-Lag
--- ═══════════════════════════════════════════
 
 local KEEP = {
     Fruits               = true,
@@ -1364,7 +1329,10 @@ local function cleanPlant(plant)
     local full = sn and FULL_DESTROY_SEEDS[sn]
 
     for _, child in ipairs(plant:GetChildren()) do
-        if child.Name ~= "_LagStore" and (full or not KEEP[child.Name]) then
+        if child.Name == "_LagStore" then continue end
+        if full then
+            pcall(function() child:Destroy() end)
+        elseif not KEEP[child.Name] then
             hideChild(child, plant)
         end
     end
@@ -1422,9 +1390,6 @@ local function getSeedNames()
     return out
 end
 
--- ═══════════════════════════════════════════
---  Info Stats
--- ═══════════════════════════════════════════
 
 local function computeInfoStats()
     local plotCount, plotMaxKg, plotTotalValue = 0, 0, 0
@@ -1481,9 +1446,6 @@ local function computeInfoStats()
     }
 end
 
--- ═══════════════════════════════════════════
---  Cleanup
--- ═══════════════════════════════════════════
 
 local function doCleanup()
     for _, c in ipairs(allConns) do
@@ -1505,9 +1467,6 @@ end
 
 _G._menuCleanup = doCleanup
 
--- ═══════════════════════════════════════════
---  UI
--- ═══════════════════════════════════════════
 
 local Window = AweHub:Window({
     Title  = "Awe Hub",
@@ -1524,7 +1483,6 @@ local Tabs = {
     Drop    = Window:AddTab({ Name = "Drop",    Icon = "alert"   }),
 }
 
--- ── Info Tab ──────────────────────────────
 
 local function buildRarityStr(byRarity)
     local parts = {}
@@ -1569,7 +1527,6 @@ task.spawn(function()
     end
 end)
 
--- ── Filter Helper ─────────────────────────
 
 local function addUnifiedFilters(section, cfg, pfx)
     local fruitNames = {}
@@ -1637,7 +1594,6 @@ local function addUnifiedFilters(section, cfg, pfx)
     }, pfx .. "WeightKg")
 end
 
--- ── Main Tab ──────────────────────────────
 
 local InvSection = Tabs.Main:AddSection("Inventory", true)
 InvSection:AddToggle({
@@ -1653,9 +1609,32 @@ FruitESPSection:AddToggle({
     Title    = "ESP Fruit",
     Default  = false,
     Callback = function(v)
+        espActive = v
         if v then scanGardenForESP() else stopFruitESP() end
     end,
 }, "FruitESP")
+
+FruitESPSection:AddDropdown({
+    Title    = "Threshold Mode",
+    Options  = {"Below", "Above"},
+    Default  = "Below",
+    Multi    = false,
+    Callback = function(v)
+        espCfg.weightMode = v
+        if espActive then stopFruitESP(); scanGardenForESP() end
+    end,
+}, "ESPThreshMode")
+
+FruitESPSection:AddInput({
+    Title    = "Weight Threshold (kg)",
+    Content  = "e.g.: 100  (empty = all)",
+    Default  = "",
+    Callback = function(v)
+        local n = tonumber(v)
+        espCfg.weightKg = n and n or math.huge
+        if espActive then stopFruitESP(); scanGardenForESP() end
+    end,
+}, "ESPWeightKg")
 
 -- Anti-Lag
 local LagSection = Tabs.Main:AddSection("Anti-Lag", true)
@@ -1692,19 +1671,7 @@ LagSection:AddToggle({
     end,
 }, "ReduceLag")
 
--- Misc
-local MiscSection = Tabs.Main:AddSection("Misc", true)
-MiscSection:AddButton({
-    Title    = "Unload Script",
-    Callback = function()
-        doCleanup()
-        pcall(function() lagStore:Destroy() end)
-        pcall(function() Window:DestroyGui() end)
-        _G._menuCleanup = nil
-    end,
-})
 
--- ── Collect Tab ───────────────────────────
 
 local CollectFilterSection = Tabs.Collect:AddSection("Filter", true)
 addUnifiedFilters(CollectFilterSection, collectCfg, "Collect")
@@ -1743,7 +1710,6 @@ CollectActionSection:AddButton({
     end,
 })
 
--- ── Gift Tab ──────────────────────────────
 
 local GiftSection = Tabs.Gift:AddSection("Gift", true)
 
@@ -1768,7 +1734,6 @@ GiftSection:AddButton({
     SubCallback = sendGiftAll,
 })
 
--- ── Sell Tab ──────────────────────────────
 
 local SellFilterSection = Tabs.Sell:AddSection("Filter", true)
 addUnifiedFilters(SellFilterSection, sellCfg, "Sell")
@@ -1828,7 +1793,6 @@ SellActionSection:AddButton({
     end,
 })
 
--- ── Drop Tab ──────────────────────────────
 
 local DropFilterSection = Tabs.Drop:AddSection("Filter", true)
 addUnifiedFilters(DropFilterSection, dropCfg, "Drop")
