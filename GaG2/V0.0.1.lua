@@ -2022,6 +2022,35 @@ end
 
 local AucDropdown
 local AucStatusPara
+local _aucSectionAdd = nil
+
+local function findAucSectionAdd()
+    if _aucSectionAdd and _aucSectionAdd.Parent then return _aucSectionAdd end
+    for _, parent in ipairs({pg, game:GetService("CoreGui")}) do
+        for _, v in ipairs(parent:GetDescendants()) do
+            if v.Name == "Paragraph" and v.Parent and v.Parent.Name == "SectionAdd" then
+                local title = v:FindFirstChild("ParagraphTitle")
+                if title and title.Text == "Lots" then
+                    _aucSectionAdd = v.Parent
+                    return _aucSectionAdd
+                end
+            end
+        end
+    end
+end
+
+local function forceResizeSection()
+    task.defer(function()
+        local sa = findAucSectionAdd()
+        if not sa then return end
+        local dummy = Instance.new("Frame")
+        dummy.Name = "UIListLayout"
+        dummy.Size = UDim2.new(0, 0, 0, 0)
+        dummy.Parent = sa
+        task.wait()
+        dummy:Destroy()
+    end)
+end
 
 local function buildStatusText()
     local lines = {}
@@ -2037,7 +2066,10 @@ end
 local function updateStatusPara()
     if AucStatusPara then
         pcall(scanLots)
-        pcall(function() AucStatusPara:SetContent(buildStatusText()) end)
+        pcall(function()
+            AucStatusPara:SetContent(buildStatusText())
+            forceResizeSection()
+        end)
     end
 end
 
@@ -2045,7 +2077,10 @@ local function refreshAuction()
     pcall(scanLots)
 
     if AucStatusPara then
-        pcall(function() AucStatusPara:SetContent(buildStatusText()) end)
+        pcall(function()
+            AucStatusPara:SetContent(buildStatusText())
+            forceResizeSection()
+        end)
     end
 
     if AucDropdown then
@@ -2093,16 +2128,16 @@ end
 
 local AucTab = Window:AddTab({ Name = "Auction", Icon = "shop" })
 
-local AucBuySection = AucTab:AddSection("Auto Buy", true)
+local AucSection = AucTab:AddSection("Auction", true)
 
-AucStatusPara = AucBuySection:AddParagraph({ Title = "Lots", Content = "Click Refresh to load" })
+AucStatusPara = AucSection:AddParagraph({ Title = "Lots", Content = "Click Refresh to load" })
 
-AucBuySection:AddButton({
+AucSection:AddButton({
     Title    = "Refresh List",
     Callback = function() pcall(refreshAuction) end,
 })
 
-AucDropdown = AucBuySection:AddDropdown({
+AucDropdown = AucSection:AddDropdown({
     Title    = "Select Items",
     Options  = {},
     Multi    = true,
@@ -2113,7 +2148,7 @@ AucDropdown = AucBuySection:AddDropdown({
     end,
 }, "AucItems")
 
-AucBuySection:AddToggle({
+AucSection:AddToggle({
     Title    = "Auto Buy",
     Default  = false,
     Callback = function(v)
