@@ -1544,11 +1544,18 @@ local function computeInfoStats()
     }
 end
 
+local _bgThreads = {}
+
 local function doCleanup()
     for _, c in ipairs(allConns) do
         pcall(function() c:Disconnect() end)
     end
     allConns = {}
+
+    for _, t in ipairs(_bgThreads) do
+        pcall(task.cancel, t)
+    end
+    _bgThreads = {}
 
     stopHUD()
     stopLag()
@@ -1597,7 +1604,7 @@ local InfoGarden     = InfoSection:AddParagraph({ Title = "Garden", Content = "L
 local InfoInventory  = Tabs.Info:AddSection("Inventory", true)
 local InfoInv        = InfoInventory:AddParagraph({ Title = "Inventory", Content = "Loading..." })
 
-task.spawn(function()
+table.insert(_bgThreads, task.spawn(function()
     while true do
         task.wait(3)
         pcall(function()
@@ -1622,7 +1629,7 @@ task.spawn(function()
             InfoInv:SetContent(table.concat(invLines, "\n"))
         end)
     end
-end)
+end))
 
 local function addUnifiedFilters(section, cfg, pfx)
     local fruitNames = {}
@@ -2155,10 +2162,10 @@ AucSection:AddToggle({
     end,
 }, "AutoBuy")
 
-task.spawn(function()
+table.insert(_bgThreads, task.spawn(function()
     while true do
         task.wait(5)
         pcall(updateStatusPara)
     end
-end)
+end))
 
