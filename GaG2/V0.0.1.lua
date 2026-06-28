@@ -195,6 +195,10 @@ local lagConns  = {}
 local stored    = {}
 local proximityConns = {}
 local lagRunning = false
+
+local hideFruitsConns   = {}
+local hideFruitsData    = {}
+local hideFruitsRunning = false
 local lagStore  = Instance.new("Folder")
 lagStore.Name   = "_LagStore"
 lagStore.Parent = p
@@ -1462,6 +1466,72 @@ local function startLag()
     end
 end
 
+local function applyHideFruit(fruit)
+    for _, d in ipairs(fruit:GetDescendants()) do
+        if d:IsA("BasePart") then
+            hideFruitsData[d] = d.Transparency
+            d.Transparency = 1
+        end
+    end
+end
+
+local function restoreHideFruit(fruit)
+    for _, d in ipairs(fruit:GetDescendants()) do
+        if d:IsA("BasePart") and hideFruitsData[d] ~= nil then
+            pcall(function() d.Transparency = hideFruitsData[d] end)
+            hideFruitsData[d] = nil
+        end
+    end
+end
+
+local function stopHideFruits()
+    hideFruitsRunning = false
+    for _, c in ipairs(hideFruitsConns) do pcall(function() c:Disconnect() end) end
+    hideFruitsConns = {}
+    for part, orig in pairs(hideFruitsData) do
+        pcall(function() part.Transparency = orig end)
+    end
+    hideFruitsData = {}
+end
+
+local function startHideFruits()
+    stopHideFruits()
+    hideFruitsRunning = true
+    for _, plot in ipairs(workspace.Gardens:GetChildren()) do
+        local plants = plot:FindFirstChild("Plants")
+        if not plants then continue end
+        for _, plant in ipairs(plants:GetChildren()) do
+            local ff = plant:FindFirstChild("Fruits")
+            if ff then
+                for _, fruit in ipairs(ff:GetChildren()) do
+                    pcall(applyHideFruit, fruit)
+                end
+                table.insert(hideFruitsConns, ff.ChildAdded:Connect(function(fruit)
+                    task.wait(0.1)
+                    if hideFruitsRunning then pcall(applyHideFruit, fruit) end
+                end))
+                table.insert(hideFruitsConns, ff.ChildRemoved:Connect(function(fruit)
+                    restoreHideFruit(fruit)
+                end))
+            end
+        end
+        table.insert(hideFruitsConns, plants.ChildAdded:Connect(function(plant2)
+            task.wait(0.2)
+            if not hideFruitsRunning then return end
+            local ff2 = plant2:FindFirstChild("Fruits")
+            if ff2 then
+                for _, fruit in ipairs(ff2:GetChildren()) do
+                    pcall(applyHideFruit, fruit)
+                end
+                table.insert(hideFruitsConns, ff2.ChildAdded:Connect(function(fruit)
+                    task.wait(0.1)
+                    if hideFruitsRunning then pcall(applyHideFruit, fruit) end
+                end))
+            end
+        end))
+    end
+end
+
 local function getSeedNames()
     local out, seen = {}, {}
     for _, plot in ipairs(workspace.Gardens:GetChildren()) do
@@ -1550,6 +1620,7 @@ local function doCleanup()
 
     stopHUD()
     stopLag()
+    stopHideFruits()
     stopFruitESP()
     stopDisableHarvest()
     stopAutoCollect()
@@ -1811,6 +1882,14 @@ LagSection:AddToggle({
         if v then startLag() else stopLag() end
     end,
 }, "ReduceLag")
+
+LagSection:AddToggle({
+    Title    = "Hide Fruits (keep prompt)",
+    Default  = false,
+    Callback = function(v)
+        if v then startHideFruits() else stopHideFruits() end
+    end,
+}, "HideFruits")
 
 local CollectFilterSection = Tabs.Collect:AddSection("Filter", true)
 addUnifiedFilters(CollectFilterSection, collectCfg, "Collect")
