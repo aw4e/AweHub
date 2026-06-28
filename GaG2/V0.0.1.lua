@@ -1383,16 +1383,7 @@ local function startAutoSellAll()
     task.spawn(function()
         while autoSellAllRunning do
             pcall(function()
-                local ok, r = pcall(function()
-                    return Net.NPCS.SellAll:Fire()
-                end)
-                if ok and type(r) == "table" then
-                    notify(
-                        "Sell All ✅",
-                        string.format("Sold %d | %s", r.FruitCount or 0, fmt(r.TotalSellValue or 0)),
-                        3
-                    )
-                end
+                Net.NPCS.SellAll:Fire()
             end)
             task.wait(sellCfg.autoInterval)
         end
