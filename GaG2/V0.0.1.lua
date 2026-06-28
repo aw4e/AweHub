@@ -959,7 +959,7 @@ local function startAutoCollect()
     task.spawn(function()
         while collectRunning do
             pcall(collectNow)
-            task.wait(0.1)
+            task.wait(0.5)
         end
     end)
 end
@@ -974,7 +974,7 @@ local function startAutoCollectAll()
     task.spawn(function()
         while collectAllRunning do
             pcall(collectNow, PASS_ALL)
-            task.wait(0.1)
+            task.wait(0.5)
         end
     end)
 end
@@ -1225,7 +1225,7 @@ local dropCfg = {
     onlyTypes    = {},
     onlyRarities = {},
     autoDrop     = false,
-    autoInterval = 0.1,
+    autoInterval = 0.5,
 }
 
 local function dropFiltered(cfgOvr)
@@ -1354,7 +1354,7 @@ local sellCfg = {
     onlyMuts     = {},
     onlyTypes    = {},
     onlyRarities = {},
-    autoInterval = 0.1,
+    autoInterval = 0.5,
 }
 
 local function sellFiltered()
@@ -2065,7 +2065,6 @@ end
 
 local function updateStatusPara()
     if AucStatusPara then
-        pcall(scanLots)
         pcall(function()
             AucStatusPara:SetContent(buildStatusText())
             forceResizeSection()
