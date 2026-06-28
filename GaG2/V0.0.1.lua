@@ -22,7 +22,6 @@ local SellValueData = require(game.ReplicatedStorage.SharedModules.SellValueData
 local MutationData  = require(game.ReplicatedStorage.SharedModules.MutationData)
 local Net           = require(game.ReplicatedStorage.SharedModules.Networking)
 
-
 local SEND_DELAY  = 10   -- server enforces 10s between SendBatch calls
 local BATCH_SIZE  = 20
 local SIZE_MULT   = 1.0
@@ -1579,6 +1578,7 @@ local function doCleanup()
     stopAutoSellAll()
     stopAutoDrop()
     stopAutoDropAll()
+    if stopAutoBuy then pcall(stopAutoBuy) end
 end
 
 _G._menuCleanup = doCleanup
@@ -1983,3 +1983,175 @@ DropActionSection:AddButton({
     Title    = "Drop Now",
     Callback = function() task.spawn(dropFiltered) end,
 })
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- AUCTION
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local auctionLots     = {}  -- [displayName] = lotTable
+local autoBuySelected = {}  -- set of displayName → true
+local autoBuyEnabled  = false
+local autoBuyThread   = nil
+
+local _AucPL, _AucMT
+local function getAucRemote()
+    if not _AucPL then
+        _AucPL = Net.Auctioneer.PurchaseLot
+        _AucMT = getrawmetatable(_AucPL)
+    end
+    return _AucPL, _AucMT
+end
+
+local function buyLot(lot)
+    local pl, mt = getAucRemote()
+    return pcall(mt.Fire, pl, lot.lotId, lot.count)
+end
+
+local function isLotActive(lot)
+    return os.time() < lot.expiresAt and (lot.stockQuantity or 1) > 0
+end
+
+local function calcCurrentPrice(lot)
+    if lot.decrementIntervalSeconds <= 0 then return lot.startPrice end
+    local elapsed = math.max(0, os.time() - lot.rolledAt)
+    local ticks   = math.floor(elapsed / lot.decrementIntervalSeconds)
+    local price   = lot.startPrice - math.round(lot.startPrice * lot.decrementPercent / 100) * ticks
+    return math.max(price, lot.minPrice)
+end
+
+local function scanLots()
+    local gui = pg:FindFirstChild("Auction")
+    if not gui then return end
+    local sf  = gui:FindFirstChildWhichIsA("ScrollingFrame", true)
+    if not sf  then return end
+
+    local fresh = {}
+    for _, frame in ipairs(sf:GetChildren()) do
+        if frame.Name:sub(1, 4) == "Lot_" then
+            local btn = frame:FindFirstChild("BuyButton", true)
+            if btn then
+                for _, conn in ipairs(getconnections(btn.Activated)) do
+                    local info = debug.getinfo(conn.Function, "S")
+                    if info and info.short_src and info.short_src:find("AuctioneerController") then
+                        local lotVal = debug.getupvalue(conn.Function, 3)
+                        if type(lotVal) == "table" and lotVal.lotId then
+                            local key = lotVal.displayName or lotVal.item or lotVal.lotId
+                            fresh[key] = lotVal
+                        end
+                    end
+                end
+            end
+        end
+    end
+    auctionLots = fresh
+end
+
+local AucDropdown
+local AucStatusPara
+
+local function buildStatusText()
+    local lines = {}
+    for name, lot in pairs(auctionLots) do
+        local state = isLotActive(lot) and "[OK]" or "[--]"
+        local price = calcCurrentPrice(lot)
+        table.insert(lines, state .. " " .. name .. " x" .. lot.count .. " | " .. fmt(price))
+    end
+    table.sort(lines)
+    return #lines > 0 and table.concat(lines, "\n") or "No lots — click Refresh"
+end
+
+local function updateStatusPara()
+    if AucStatusPara then
+        pcall(scanLots)
+        pcall(function() AucStatusPara:SetContent(buildStatusText()) end)
+    end
+end
+
+local function refreshAuction()
+    pcall(scanLots)
+
+    if AucStatusPara then
+        pcall(function() AucStatusPara:SetContent(buildStatusText()) end)
+    end
+
+    if AucDropdown then
+        local names = {}
+        for name in pairs(auctionLots) do table.insert(names, name) end
+        table.sort(names)
+        pcall(function() AucDropdown:SetValues(names) end)
+    end
+end
+
+function startAutoBuy()
+    autoBuyEnabled = true
+    autoBuyThread  = task.spawn(function()
+        while autoBuyEnabled do
+            pcall(function()
+                for name in pairs(autoBuySelected) do
+                    local lot = auctionLots[name]
+                    if lot and isLotActive(lot) then
+                        local ok, err = buyLot(lot)
+                        if ok then
+                            AweHub:MakeNotify({
+                                Title   = "Auction",
+                                Content = "Bought: " .. name .. " x" .. lot.count,
+                                Delay   = 3,
+                            })
+                        end
+                        task.wait(0.25)
+                    end
+                end
+            end)
+            task.wait(1)
+        end
+    end)
+end
+
+function stopAutoBuy()
+    autoBuyEnabled = false
+    if autoBuyThread then
+        task.cancel(autoBuyThread)
+        autoBuyThread = nil
+    end
+end
+
+-- ── Tab & UI ───────────────────────────────────────────────────────────────
+
+local AucTab = Window:AddTab({ Name = "Auction", Icon = "shop" })
+
+local AucBuySection = AucTab:AddSection("Auto Buy", true)
+
+AucStatusPara = AucBuySection:AddParagraph({ Title = "Lots", Content = "Click Refresh to load" })
+
+AucBuySection:AddButton({
+    Title    = "Refresh List",
+    Callback = function() pcall(refreshAuction) end,
+})
+
+AucDropdown = AucBuySection:AddDropdown({
+    Title    = "Select Items",
+    Options  = {},
+    Multi    = true,
+    Default  = {},
+    Callback = function(opts)
+        for k in pairs(autoBuySelected) do autoBuySelected[k] = nil end
+        for _, n in ipairs(opts) do autoBuySelected[n] = true end
+    end,
+}, "AucItems")
+
+AucBuySection:AddToggle({
+    Title    = "Auto Buy",
+    Default  = false,
+    Callback = function(v)
+        if v then startAutoBuy() else stopAutoBuy() end
+    end,
+}, "AutoBuy")
+
+task.spawn(function()
+    while true do
+        task.wait(5)
+        pcall(updateStatusPara)
+    end
+end)
+
