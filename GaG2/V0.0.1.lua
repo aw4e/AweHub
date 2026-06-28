@@ -1,4 +1,4 @@
-if _G._menuCleanup then pcall(_G._menuCleanup) end
+﻿if _G._menuCleanup then pcall(_G._menuCleanup) end
 
 local Players    = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -156,7 +156,6 @@ local MUT_NAMES = {
     "Aurora",
 }
 
-
 local stockMults = {}
 local lastT      = 0
 local mutCache   = {}
@@ -202,7 +201,6 @@ lagStore.Parent = p
 
 local FULL_DESTROY_SEEDS = {}
 
-
 local function track(c)
     if c then table.insert(allConns, c) end
 end
@@ -230,7 +228,6 @@ local function fmt(n)
         return string.format("$%d", n)
     end
 end
-
 
 local function applyStock(snap)
     local e = snap and snap.entries
@@ -262,7 +259,6 @@ end)
 pcall(function()
     track(Net.FruitStock.Snapshot.OnClientEvent:Connect(applyStock))
 end)
-
 
 local function getMutMult(mutation)
     if mutation == "" then return 1 end
@@ -312,7 +308,6 @@ local function getWeight(fruitName, sizeMulti)
     return math.floor(w * 100 + 0.5) / 100
 end
 
-
 local function getBackpackFruits()
     local bp = p:FindFirstChild("Backpack")
     local out, seen = {}, {}
@@ -349,7 +344,6 @@ local function getBackpackFruits()
     if p.Character then scan(p.Character) end
     return out
 end
-
 
 local function findMyPlot()
     local g = workspace:FindFirstChild("Gardens")
@@ -505,7 +499,6 @@ local function stopDisableHarvest()
     proximityConns = {}
     setPlotHarvestEnabled(true)
 end
-
 
 local function ensureItemLabel(cell, textSize)
     local lbl = cell:FindFirstChild("_ItemPrice")
@@ -726,7 +719,6 @@ local function stopHUD()
     end)
 end
 
-
 local function makeMutColorHex(mut)
     local c = mut and MUTATION_COLORS[mut]
     if not c then return nil end
@@ -914,7 +906,6 @@ local function stopFruitESP()
     espTags = {}
 end
 
-
 local collectCfg = {
     onlyMuts     = {},
     onlyTypes    = {},
@@ -992,7 +983,6 @@ local function stopAutoCollectAll()
     collectAllRunning = false
 end
 
-
 local function collectDropItems()
     local char = p.Character
     if not char then return end
@@ -1041,7 +1031,6 @@ end
 local function stopAutoCollectDrop()
     autoCollectDropRunning = false
 end
-
 
 local giftCfg = {
     target         = "",
@@ -1229,7 +1218,6 @@ local function sendGiftAll()
     doSendItems(items, totalPrice, typeInfo)
 end
 
-
 local dropCfg = {
     weightMode   = "Below",
     weightKg     = math.huge,
@@ -1360,7 +1348,6 @@ local function stopAutoDropAll()
     autoDropAllRunning = false
 end
 
-
 local sellCfg = {
     weightMode   = "Below",
     weightKg     = math.huge,
@@ -1415,8 +1402,6 @@ end
 local function stopAutoSellAll()
     autoSellAllRunning = false
 end
-
-
 
 local KEEP = {
     Fruits              = true,
@@ -1504,7 +1489,6 @@ local function getSeedNames()
     return out
 end
 
-
 local function computeInfoStats()
     local plotCount, plotMaxKg, plotTotalValue = 0, 0, 0
     local plotByRarity = {}
@@ -1560,7 +1544,6 @@ local function computeInfoStats()
     }
 end
 
-
 local function doCleanup()
     for _, c in ipairs(allConns) do
         pcall(function() c:Disconnect() end)
@@ -1583,7 +1566,6 @@ end
 
 _G._menuCleanup = doCleanup
 
-
 local Window = AweHub:Window({
     Title  = "Awe Hub",
     Footer = "Grow a Gardens 2 | By 0xAw4e",
@@ -1598,7 +1580,6 @@ local Tabs = {
     Sell    = Window:AddTab({ Name = "Sell",    Icon = "cart"    }),
     Drop    = Window:AddTab({ Name = "Drop",    Icon = "alert"   }),
 }
-
 
 local function buildRarityStr(byRarity)
     local parts = {}
@@ -1642,7 +1623,6 @@ task.spawn(function()
         end)
     end
 end)
-
 
 local function addUnifiedFilters(section, cfg, pfx)
     local fruitNames = {}
@@ -1703,7 +1683,6 @@ local function addUnifiedFilters(section, cfg, pfx)
         end,
     }, pfx .. "WeightKg")
 end
-
 
 local InvSection = Tabs.Main:AddSection("Inventory", true)
 InvSection:AddToggle({
@@ -1835,8 +1814,6 @@ LagSection:AddToggle({
     end,
 }, "ReduceLag")
 
-
-
 local CollectFilterSection = Tabs.Collect:AddSection("Filter", true)
 addUnifiedFilters(CollectFilterSection, collectCfg, "Collect")
 
@@ -1874,7 +1851,6 @@ CollectActionSection:AddButton({
     end,
 })
 
-
 local GiftSection = Tabs.Gift:AddSection("Gift", true)
 
 GiftSection:AddInput({
@@ -1897,7 +1873,6 @@ GiftSection:AddButton({
     SubTitle    = "Send All",
     SubCallback = sendGiftAll,
 })
-
 
 local SellFilterSection = Tabs.Sell:AddSection("Filter", true)
 addUnifiedFilters(SellFilterSection, sellCfg, "Sell")
@@ -1957,7 +1932,6 @@ SellActionSection:AddButton({
     end,
 })
 
-
 local DropFilterSection = Tabs.Drop:AddSection("Filter", true)
 addUnifiedFilters(DropFilterSection, dropCfg, "Drop")
 
@@ -1983,7 +1957,6 @@ DropActionSection:AddButton({
     Title    = "Drop Now",
     Callback = function() task.spawn(dropFiltered) end,
 })
-
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- AUCTION
