@@ -1,4 +1,4 @@
-﻿if _G._menuCleanup then pcall(_G._menuCleanup) end
+if _G._menuCleanup then pcall(_G._menuCleanup) end
 
 local Players    = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -1090,9 +1090,9 @@ local function doSendItems(items, totalPrice, typeInfo)
 
         -- Header
         if failed > 0 then
-            table.insert(lines, string.format("✅ %d sent  ❌ %d failed", sent, failed))
+            table.insert(lines, string.format("[OK] %d sent  [X] %d failed", sent, failed))
         else
-            table.insert(lines, string.format("✅ %d/%d sent", sent, #items))
+            table.insert(lines, string.format("[OK] %d/%d sent", sent, #items))
         end
 
         table.insert(lines, string.format("To: %s  |  Value: %s", giftCfg.target, fmt(totalPrice)))
@@ -1919,7 +1919,7 @@ SellActionSection:AddButton({
             return Net.NPCS.SellAll:Fire()
         end)
         if ok and type(r) == "table" then
-            notify("Sell All ✅", string.format(
+            notify("Sell All [OK]", string.format(
                 "Sold %d | %s",
                 r.FruitCount or 0,
                 fmt(r.TotalSellValue or r.SellPrice or 0)
