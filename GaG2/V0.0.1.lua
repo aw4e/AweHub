@@ -1,8 +1,12 @@
 if _G._menuCleanup then pcall(_G._menuCleanup) end
 
-local Players    = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local CoreGui    = game:GetService("CoreGui")
+local Players             = game:GetService("Players")
+local RunService          = game:GetService("RunService")
+local CoreGui             = game:GetService("CoreGui")
+local TeleportService     = game:GetService("TeleportService")
+local HttpService         = game:GetService("HttpService")
+local VirtualUser         = game:GetService("VirtualUser")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local AweHub = loadstring(game:HttpGet("https://raw.githubusercontent.com/aw4e/AweHub/dev/UI.lua"))()
 
@@ -191,14 +195,12 @@ local autoSellAllRunning   = false
 local collectedSet = {}
 local dropBusy     = false
 
-local lagConns  = {}
-local stored    = {}
+local lagConns       = {}
+local stored         = {}
+local lagPromptStore = {}  -- { prompt, origParent } extracted when lagKeepPrompt
 local proximityConns = {}
-local lagRunning = false
-
-local hideFruitsConns   = {}
-local hideFruitsData    = {}
-local hideFruitsRunning = false
+local lagRunning     = false
+local lagKeepPrompt  = false
 local lagStore  = Instance.new("Folder")
 lagStore.Name   = "_LagStore"
 lagStore.Parent = p
@@ -208,6 +210,13 @@ local FULL_DESTROY_SEEDS = {}
 local function track(c)
     if c then table.insert(allConns, c) end
 end
+
+track(p.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.zero)
+    VirtualInputManager:SendKeyEvent(true,  Enum.KeyCode.RightMeta, false, game)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.RightMeta, false, game)
+end))
 
 local function notify(title, content, delay)
     pcall(function()
@@ -629,73 +638,73 @@ local function startHUD()
         end))
     end)
 
-    pcall(function()
-        local bp0 = p:WaitForChild("Backpack", 5)
-        if bp0 then
-            track(bp0.ChildAdded:Connect(function()   lastT = 0 end))
-            track(bp0.ChildRemoved:Connect(function() lastT = 0 end))
-        end
-    end)
-
     local priceByWeight = {}
 
-    hudConn = RunService.Heartbeat:Connect(function()
-        if tick() - lastT < 1.5 then return end
-        lastT = tick()
+    local function doHudScan()
+        local bp = p:FindFirstChild("Backpack")
+        if not bp then return end
 
-        pcall(function()
-            local bp = p:FindFirstChild("Backpack")
-            if not bp then return end
+        for k in next, priceByWeight do
+            priceByWeight[k] = nil
+        end
 
-            for k in next, priceByWeight do
-                priceByWeight[k] = nil
-            end
+        local total = 0
 
-            local total = 0
+        local function scanContainer(c)
+            for _, v in ipairs(c:GetChildren()) do
+                if v:GetAttribute("HarvestedFruit") then
+                    local name  = v:GetAttribute("FruitName") or v.Name
+                    local price = calcPrice(
+                        name,
+                        v:GetAttribute("SizeMultiplier") or 1,
+                        v:GetAttribute("Mutation") or "",
+                        v:GetAttribute("DecayAlpha") or 0
+                    )
+                    total = total + price
 
-            local function scanContainer(c)
-                for _, v in ipairs(c:GetChildren()) do
-                    if v:GetAttribute("HarvestedFruit") then
-                        local name  = v:GetAttribute("FruitName") or v.Name
-                        local price = calcPrice(
-                            name,
-                            v:GetAttribute("SizeMultiplier") or 1,
-                            v:GetAttribute("Mutation") or "",
-                            v:GetAttribute("DecayAlpha") or 0
-                        )
-                        total = total + price
-
-                        local w   = v:GetAttribute("Weight") or 0
-                        local key = name .. "\0" .. string.format("%.2f", math.floor(w * 100 + 0.5) / 100)
-                        if not priceByWeight[key] then
-                            priceByWeight[key] = price
-                        end
+                    local w   = v:GetAttribute("Weight") or 0
+                    local key = name .. "\0" .. string.format("%.2f", math.floor(w * 100 + 0.5) / 100)
+                    if not priceByWeight[key] then
+                        priceByWeight[key] = price
                     end
                 end
             end
+        end
 
-            scanContainer(bp)
-            if p.Character then scanContainer(p.Character) end
+        scanContainer(bp)
+        if p.Character then scanContainer(p.Character) end
 
-            if totalLbl and totalLbl.Parent then
-                local txt = total == 0 and "" or fmt(total)
-                if totalLbl.Text ~= txt then
-                    totalLbl.Text = txt
-                end
+        if totalLbl and totalLbl.Parent then
+            local txt = total == 0 and "" or fmt(total)
+            if totalLbl.Text ~= txt then
+                totalLbl.Text = txt
             end
+        end
 
-            local ugf = sf and sf:FindFirstChild("UIGridFrame")
-            if ugf then stampCells(ugf, priceByWeight, 14) end
-            if hb  then stampCells(hb,  priceByWeight, 11) end
-        end)
+        local ugf = sf and sf:FindFirstChild("UIGridFrame")
+        if ugf then stampCells(ugf, priceByWeight, 14) end
+        if hb  then stampCells(hb,  priceByWeight, 11) end
+    end
+
+    pcall(function()
+        local bp0 = p:WaitForChild("Backpack", 5)
+        if bp0 then
+            track(bp0.ChildAdded:Connect(function()   pcall(doHudScan) end))
+            track(bp0.ChildRemoved:Connect(function() pcall(doHudScan) end))
+        end
     end)
 
-    track(hudConn)
+    hudConn = task.spawn(function()
+        while true do
+            pcall(doHudScan)
+            task.wait(2)
+        end
+    end)
 end
 
 local function stopHUD()
     if hudConn then
-        hudConn:Disconnect()
+        pcall(task.cancel, hudConn)
         hudConn = nil
     end
 
@@ -963,7 +972,7 @@ local function startAutoCollect()
     task.spawn(function()
         while collectRunning do
             pcall(collectNow)
-            task.wait(0.5)
+            task.wait(1)
         end
     end)
 end
@@ -978,7 +987,7 @@ local function startAutoCollectAll()
     task.spawn(function()
         while collectAllRunning do
             pcall(collectNow, PASS_ALL)
-            task.wait(0.5)
+            task.wait(1)
         end
     end)
 end
@@ -1024,10 +1033,19 @@ end
 
 local function startAutoCollectDrop()
     autoCollectDropRunning = true
+    local di = workspace:FindFirstChild("DroppedItems")
+    if di then
+        track(di.ChildAdded:Connect(function()
+            if autoCollectDropRunning then
+                task.wait(0.1)
+                pcall(collectDropItems)
+            end
+        end))
+    end
     task.spawn(function()
         while autoCollectDropRunning do
             pcall(collectDropItems)
-            task.wait(1)
+            task.wait(3)
         end
     end)
 end
@@ -1229,7 +1247,7 @@ local dropCfg = {
     onlyTypes    = {},
     onlyRarities = {},
     autoDrop     = false,
-    autoInterval = 0.5,
+    autoInterval = 1,
 }
 
 local function dropFiltered(cfgOvr)
@@ -1358,7 +1376,7 @@ local sellCfg = {
     onlyMuts     = {},
     onlyTypes    = {},
     onlyRarities = {},
-    autoInterval = 0.5,
+    autoInterval = 1,
 }
 
 local function sellFiltered()
@@ -1418,6 +1436,14 @@ local function hideChild(child, origParent, bucket)
     table.insert(stored, { child = child, plant = origParent })
 end
 
+local function childHasProximityPrompt(inst)
+    if inst:IsA("ProximityPrompt") then return true end
+    for _, d in ipairs(inst:GetDescendants()) do
+        if d:IsA("ProximityPrompt") then return true end
+    end
+    return false
+end
+
 local function cleanPlant(plant, plotBucket)
     local seedName    = plant:GetAttribute("SeedName")
     local fullHide    = seedName and FULL_DESTROY_SEEDS[seedName]
@@ -1425,6 +1451,22 @@ local function cleanPlant(plant, plotBucket)
 
     for _, child in ipairs(plant:GetChildren()) do
         if child.Name == "_LagStore" then continue end
+        if lagKeepPrompt and fullHide then
+            -- Extract ProximityPrompt's BasePart parent to plant root so the prompt
+            -- retains its Part anchor and stays visible/interactable
+            for _, d in ipairs(child:GetDescendants()) do
+                if d:IsA("ProximityPrompt") then
+                    local anchor = d.Parent
+                    if anchor and (anchor:IsA("BasePart") or anchor:IsA("Attachment")) then
+                        table.insert(lagPromptStore, { prompt = anchor, origParent = anchor.Parent })
+                        anchor.Parent = plant
+                    else
+                        table.insert(lagPromptStore, { prompt = d, origParent = d.Parent })
+                        d.Parent = plant
+                    end
+                end
+            end
+        end
         if fullHide or not KEEP[child.Name] then
             hideChild(child, plant, plantBucket)
         end
@@ -1446,6 +1488,15 @@ local function stopLag()
         end)
     end
     stored = {}
+    -- Restore extracted ProximityPrompts after children are back in place
+    for _, entry in ipairs(lagPromptStore) do
+        pcall(function()
+            if entry.origParent and entry.origParent.Parent then
+                entry.prompt.Parent = entry.origParent
+            end
+        end)
+    end
+    lagPromptStore = {}
 end
 
 local function startLag()
@@ -1463,72 +1514,6 @@ local function startLag()
                 cleanPlant(pp, getOrMakeFolder(lagStore, plot.Name))
             end))
         end
-    end
-end
-
-local function applyHideFruit(fruit)
-    for _, d in ipairs(fruit:GetDescendants()) do
-        if d:IsA("BasePart") then
-            hideFruitsData[d] = d.Transparency
-            d.Transparency = 1
-        end
-    end
-end
-
-local function restoreHideFruit(fruit)
-    for _, d in ipairs(fruit:GetDescendants()) do
-        if d:IsA("BasePart") and hideFruitsData[d] ~= nil then
-            pcall(function() d.Transparency = hideFruitsData[d] end)
-            hideFruitsData[d] = nil
-        end
-    end
-end
-
-local function stopHideFruits()
-    hideFruitsRunning = false
-    for _, c in ipairs(hideFruitsConns) do pcall(function() c:Disconnect() end) end
-    hideFruitsConns = {}
-    for part, orig in pairs(hideFruitsData) do
-        pcall(function() part.Transparency = orig end)
-    end
-    hideFruitsData = {}
-end
-
-local function startHideFruits()
-    stopHideFruits()
-    hideFruitsRunning = true
-    for _, plot in ipairs(workspace.Gardens:GetChildren()) do
-        local plants = plot:FindFirstChild("Plants")
-        if not plants then continue end
-        for _, plant in ipairs(plants:GetChildren()) do
-            local ff = plant:FindFirstChild("Fruits")
-            if ff then
-                for _, fruit in ipairs(ff:GetChildren()) do
-                    pcall(applyHideFruit, fruit)
-                end
-                table.insert(hideFruitsConns, ff.ChildAdded:Connect(function(fruit)
-                    task.wait(0.1)
-                    if hideFruitsRunning then pcall(applyHideFruit, fruit) end
-                end))
-                table.insert(hideFruitsConns, ff.ChildRemoved:Connect(function(fruit)
-                    restoreHideFruit(fruit)
-                end))
-            end
-        end
-        table.insert(hideFruitsConns, plants.ChildAdded:Connect(function(plant2)
-            task.wait(0.2)
-            if not hideFruitsRunning then return end
-            local ff2 = plant2:FindFirstChild("Fruits")
-            if ff2 then
-                for _, fruit in ipairs(ff2:GetChildren()) do
-                    pcall(applyHideFruit, fruit)
-                end
-                table.insert(hideFruitsConns, ff2.ChildAdded:Connect(function(fruit)
-                    task.wait(0.1)
-                    if hideFruitsRunning then pcall(applyHideFruit, fruit) end
-                end))
-            end
-        end))
     end
 end
 
@@ -1620,7 +1605,6 @@ local function doCleanup()
 
     stopHUD()
     stopLag()
-    stopHideFruits()
     stopFruitESP()
     stopDisableHarvest()
     stopAutoCollect()
@@ -1641,6 +1625,91 @@ local Window = AweHub:Window({
     Color  = Color3.fromRGB(255, 165, 0),
 })
 
+-- === Auto-Reconnect (Weather Event Aware) ===
+local REJOIN_FILE = "gag2_rejoin.json"
+
+local NIGHT_SKY_NAMES = {
+    Goldmoon     = "Gold Moon",
+    RainbowMoon  = "Rainbow Moon",
+    EnchainedMoon = "Enchained Moon",
+    Bloodmoon    = "Blood Moon",
+}
+
+local function getWeatherStatus()
+    local rs = game:GetService("ReplicatedStorage")
+    -- Daytime weather events
+    local wv = rs:FindFirstChild("WeatherValues")
+    if wv then
+        for _, ef in ipairs(wv:GetChildren()) do
+            local playing = ef:FindFirstChild("Playing")
+            local endTime = ef:FindFirstChild("EndTime")
+            if playing and playing.Value and endTime and endTime.Value > 0 then
+                local secLeft = math.max(0, endTime.Value - workspace:GetServerTimeNow())
+                return ef.Name, secLeft
+            end
+        end
+    end
+    -- Night events via RS.Night + active Lighting sky
+    local night = rs:FindFirstChild("Night")
+    if night and night.Value then
+        local sky = game:GetService("Lighting"):FindFirstChildOfClass("Sky")
+        if sky then
+            local eventName = NIGHT_SKY_NAMES[sky.Name] or sky.Name
+            return eventName, nil  -- no EndTime for night events
+        end
+        return "Night", nil
+    end
+    return nil, 0
+end
+
+local function saveRejoinInfo(secLeft, extraSec)
+    local waitUntil = os.time() + (secLeft or 0) + (extraSec or 5)
+    pcall(writefile, REJOIN_FILE, HttpService:JSONEncode({
+        placeId   = game.PlaceId,
+        jobId     = game.JobId,
+        isPrivate = game.PrivateServerId ~= "",
+        waitUntil = waitUntil,
+    }))
+end
+
+local function checkAutoRejoin()
+    if not isfile(REJOIN_FILE) then return end
+    local ok, info = pcall(function()
+        return HttpService:JSONDecode(readfile(REJOIN_FILE))
+    end)
+    pcall(delfile, REJOIN_FILE)
+    if not ok or not info then return end
+
+    local remaining = info.waitUntil - os.time()
+    if remaining > 0 then
+        task.wait(remaining)
+    end
+    pcall(function()
+        TeleportService:TeleportToPlaceInstance(info.placeId, info.jobId, p)
+    end)
+end
+
+local function leaveForWeather()
+    local name, secLeft = getWeatherStatus()
+    if not name then
+        AweHub:MakeNotify({ Title = "Reconnect", Content = "No active weather event.", Delay = 4 })
+        return
+    end
+    -- Night events have no EndTime — wait fixed 10 min buffer
+    local extraSec = (secLeft == nil) and 600 or 5
+    saveRejoinInfo(secLeft, extraSec)
+    local msg = secLeft and ("~" .. math.ceil(secLeft) .. "s") or "~10min (night event)"
+    AweHub:MakeNotify({
+        Title   = "Reconnect",
+        Content = name .. " detected. Rejoining after " .. msg .. ".",
+        Delay   = 5,
+    })
+    task.wait(1)
+    TeleportService:Teleport(game.PlaceId, p)
+end
+
+task.spawn(checkAutoRejoin)
+
 local Tabs = {
     Info    = Window:AddTab({ Name = "Info",    Icon = "stat"    }),
     Main    = Window:AddTab({ Name = "Main",    Icon = "menu"    }),
@@ -1648,6 +1717,7 @@ local Tabs = {
     Gift    = Window:AddTab({ Name = "Gift",    Icon = "payment" }),
     Sell    = Window:AddTab({ Name = "Sell",    Icon = "cart"    }),
     Drop    = Window:AddTab({ Name = "Drop",    Icon = "alert"   }),
+    Weather = Window:AddTab({ Name = "Weather", Icon = "star"    }),
 }
 
 local function buildRarityStr(byRarity)
@@ -1665,6 +1735,49 @@ local InfoSection    = Tabs.Info:AddSection("Garden", true)
 local InfoGarden     = InfoSection:AddParagraph({ Title = "Garden", Content = "Loading..." })
 local InfoInventory  = Tabs.Info:AddSection("Inventory", true)
 local InfoInv        = InfoInventory:AddParagraph({ Title = "Inventory", Content = "Loading..." })
+
+local WEATHER_EVENTS    = { "Rainbow", "Snowfall", "Starfall", "Aurora", "Sunburst", "Gold Moon", "Blood Moon", "Rainbow Moon", "Enchained Moon" }
+local weatherSkipSet    = {}
+local weatherAutoLeave  = false
+
+local WeatherSection    = Tabs.Weather:AddSection("Event Status", true)
+local WeatherPara       = WeatherSection:AddParagraph({ Title = "Active Event", Content = "None" })
+
+local WeatherSkipSection = Tabs.Weather:AddSection("Auto-Leave", true)
+WeatherSkipSection:AddDropdown({
+    Title    = "Events to Skip",
+    Options  = WEATHER_EVENTS,
+    Multi    = true,
+    Default  = {},
+    Callback = function(selected)
+        for k in pairs(weatherSkipSet) do weatherSkipSet[k] = nil end
+        for _, name in ipairs(selected) do weatherSkipSet[name] = true end
+    end,
+}, "WeatherSkipEvents")
+
+WeatherSkipSection:AddToggle({
+    Title    = "Auto Leave",
+    Default  = false,
+    Callback = function(v) weatherAutoLeave = v end,
+}, "WeatherAutoLeave")
+
+table.insert(_bgThreads, task.spawn(function()
+    while true do
+        task.wait(5)
+        pcall(function()
+            local name, sec = getWeatherStatus()
+            if name then
+                local timeStr = sec and ("~" .. math.ceil(sec) .. "s left") or "night event"
+                WeatherPara:SetContent(name .. " (" .. timeStr .. ")")
+                if weatherAutoLeave and weatherSkipSet[name] then
+                    leaveForWeather()
+                end
+            else
+                WeatherPara:SetContent("None")
+            end
+        end)
+    end
+end))
 
 table.insert(_bgThreads, task.spawn(function()
     while true do
@@ -1884,12 +1997,13 @@ LagSection:AddToggle({
 }, "ReduceLag")
 
 LagSection:AddToggle({
-    Title    = "Hide Fruits (keep prompt)",
+    Title    = "Keep Proximity Prompt",
     Default  = false,
     Callback = function(v)
-        if v then startHideFruits() else stopHideFruits() end
+        lagKeepPrompt = v
+        if lagRunning then startLag() end
     end,
-}, "HideFruits")
+}, "LagKeepPrompt")
 
 local CollectFilterSection = Tabs.Collect:AddSection("Filter", true)
 addUnifiedFilters(CollectFilterSection, collectCfg, "Collect")
