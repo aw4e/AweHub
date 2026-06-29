@@ -1682,7 +1682,17 @@ local function checkAutoRejoin()
 
     local remaining = info.waitUntil - os.time()
     if remaining > 0 then
-        task.wait(remaining)
+        while true do
+            remaining = info.waitUntil - os.time()
+            if remaining <= 0 then break end
+            local step = math.min(remaining, 30)
+            AweHub:MakeNotify({
+                Title   = "Auto-Rejoin",
+                Content = "Event ongoing — rejoining in ~" .. math.ceil(remaining) .. "s",
+                Delay   = step + 1,
+            })
+            task.wait(step)
+        end
     end
     pcall(function()
         TeleportService:TeleportToPlaceInstance(info.placeId, info.jobId, p)
@@ -1700,9 +1710,9 @@ local function leaveForWeather()
     saveRejoinInfo(secLeft, extraSec)
     local msg = secLeft and ("~" .. math.ceil(secLeft) .. "s") or "~10min (night event)"
     AweHub:MakeNotify({
-        Title   = "Reconnect",
-        Content = name .. " detected. Rejoining after " .. msg .. ".",
-        Delay   = 5,
+        Title   = "Auto-Leave",
+        Content = name .. " detected — disconnecting. Back in " .. msg .. ".",
+        Delay   = 4,
     })
     task.wait(1)
     TeleportService:Teleport(game.PlaceId, p)
